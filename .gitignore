@@ -1,0 +1,11 @@
+# IDE
+**/.vscode
+**/.idea
+
+# PYTHON
+**/__pycache__
+
+# DATASETS
+**/dataset/*
+**/trainer/*
+**/face_map.json
