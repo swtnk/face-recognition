@@ -12,15 +12,17 @@ if __name__ == "__main__":
         help="Actions: setup, clean, add, train, recognize, add_train_recognize, add_train, train_recognize",
     )
     parser.add_argument("-c", "--camera", type=int, default=0, help="camera index")
-    parser.add_argument("-v", "--version", action=argparse.BooleanOptionalAction, help="version info")
+    parser.add_argument(
+        "-v", "--version", action=argparse.BooleanOptionalAction, help="version info"
+    )
     args = parser.parse_args()
 
     if args.camera is not None:
         CAMERA_INDEX = args.camera
 
     if args.version:
-        with open(Config.BASE_DIR / 'VERSION', 'r') as fread:
-            print(f'{fread.read()}')
+        with open(Config.BASE_DIR / "VERSION", "r") as fread:
+            print(f"{fread.read()}")
 
     recognizer = Recognizer(camera_index=CAMERA_INDEX)
 
