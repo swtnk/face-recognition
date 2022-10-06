@@ -9,6 +9,7 @@ ipython = "*"
 pandas = "*"
 tabulate = "*"
 pillow = "*"
+tqdm = "*"
 
 [dev-packages]
 black = "==22.8.0"

@@ -1,6 +1,7 @@
 # IDE
 **/.vscode
 **/.idea
+**/.vim
 
 # PYTHON
 **/__pycache__

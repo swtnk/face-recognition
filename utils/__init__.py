@@ -1,3 +1,4 @@
+from tkinter import CASCADE
 import typing
 import platform
 import asyncio
@@ -6,8 +7,14 @@ import pip
 import numpy as np
 import cv2
 import json
+import shutil
+from config import Config
 from PIL import Image
 from pathlib import Path
+from tqdm import tqdm
+
+DIRECTORIES = Config.DIRECTORIES
+FACE_MAP_JSON = Config.FACE_MAP_JSON
 
 
 def install_package(package_name: str) -> bool:
@@ -20,6 +27,17 @@ if platform.system().lower() == "windows":
     except ImportError:
         install_package("winsdk")
         import winsdk.windows.devices.enumeration as windows_devices
+
+
+def setup_project():
+    for directory in DIRECTORIES:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+
+
+def clean_project():
+    for directory in DIRECTORIES:
+        shutil.rmtree(directory, ignore_errors=True)
+    Path(FACE_MAP_JSON).unlink(missing_ok=True)
 
 
 class Camera:
@@ -79,25 +97,19 @@ class Camera:
 
     @classmethod
     def test_camera(cls, camera_index: int = 0):
-        cap = cv2.VideoCapture(camera_index)
-        cap.set(3, 640)
-        cap.set(4, 480)
+        with VideoCaptureManager(camera_index=camera_index) as vcm:
+            while True:
+                _, frame = vcm.camera.read()
+                frame = cv2.flip(frame, 1)
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        while True:
-            ret, frame = cap.read()
-            frame = cv2.flip(frame, 1)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                cv2.imshow("frame", frame)
+                cv2.imshow("gray", gray)
 
-            cv2.imshow("frame", frame)
-            cv2.imshow("gray", gray)
+                k = cv2.waitKey(30) & 0xFF
 
-            k = cv2.waitKey(30) & 0xFF
-
-            if k == 27:
-                break
-
-        cap.release()
-        cv2.destroyAllWindows()
+                if k == 27:
+                    break
 
 
 class VideoCaptureManager:
@@ -127,56 +139,61 @@ class Recognizer:
         self,
         camera_index: int = 0,
         dataset_path: str = "dataset",
-        detection_model: str = "./Cascades/haarcascades_cuda/haarcascade_frontalface_default.xml",
+        detection_model: Path = Config.CASCASE_MODEL,
     ) -> None:
         self.camera_index = camera_index
-        self.detection_model = detection_model
+        self.detection_model = Config.BASE_DIR / detection_model
         self.face_recognizer = cv2.face.LBPHFaceRecognizer_create()
-        self.face_detector = cv2.CascadeClassifier(self.detection_model)
-        self.dataset_path = Path(dataset_path)
+        self.face_detector = cv2.CascadeClassifier(str(self.detection_model))
+        self.dataset_path = Config.BASE_DIR / dataset_path
         self.font = cv2.FONT_HERSHEY_SIMPLEX
 
     def add_face(self):
         face_id = 1
         face_name = input("Enter Name: ")
         data = list()
-        FACE_MAP_PATH = Path("./face_map.json")
-        if not FACE_MAP_PATH.exists():
-            with open(FACE_MAP_PATH, "w+") as f:
+        if not FACE_MAP_JSON.exists():
+            with open(FACE_MAP_JSON, "w+") as f:
                 json.dump({"count": 1, "faces": {face_id: face_name}}, f)
         else:
-            with open(FACE_MAP_PATH, "r") as fread:
+            with open(FACE_MAP_JSON, "r") as fread:
                 data = json.load(fread)
 
-            with open(FACE_MAP_PATH, "w") as fwrite:
+            with open(FACE_MAP_JSON, "w") as fwrite:
                 data["count"] += 1
                 face_id = data["count"]
                 data["faces"][face_id] = face_name
                 json.dump(data, fwrite)
 
-        print("[INFO] Initializing face capture. Look the camera and wait ...")
+        print("[INFO] Initializing face capture. Look into camera and wait ...")
         count: int = 0
         with VideoCaptureManager(camera_index=self.camera_index) as vcm:
+            progress_bar = tqdm(
+                total=Config.IMAGE_COUNT_PER_ID,
+                ascii="░▒█",
+                bar_format="Observing face: {desc:<5.5}{percentage:3.0f}%|{bar:30}{r_bar}",
+            )
             while True:
-                ret, image = vcm.camera.read()
+                _, image = vcm.camera.read()
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 faces = self.face_detector.detectMultiScale(gray, 1.3, 5)
 
                 for (x, y, w, h) in faces:
                     cv2.rectangle(image, (x, y), (x + w, y + h), (255, 0, 0), 2)
                     count += 1
+                    progress_bar.update(1)
                     cv2.imwrite(
-                        f"./dataset/User.{face_id}.{count}.jpg",
+                        f"{Config.DATASET_DIR}/User.{face_id}.{count}.jpg",
                         gray[y : y + h, x : x + w],
                     )
-                    cv2.imshow("image", image)
+                    cv2.imshow(Config.RECOGNIZER_FRAME_NAME, image)
 
                 k = cv2.waitKey(100) & 0xFF
-                if k == 27 or count >= 30:
+                if k == 27 or count >= Config.IMAGE_COUNT_PER_ID:
                     break
+            progress_bar.close()
 
     def __get_images_and_labels(self):
-        import os
 
         image_paths = [f for f in self.dataset_path.iterdir()]
         face_samples = list()
@@ -198,20 +215,22 @@ class Recognizer:
         print("Training started...")
         faces, ids = self.__get_images_and_labels()
         self.face_recognizer.train(faces, np.array(ids))
-        self.face_recognizer.write("trainer/trainer.yml")
-        print(f"\n [INFO] {len(np.unique(ids))} faces trained. Exiting Program")
+        self.face_recognizer.write(f"{Config.TRAINER_YAML}")
+        print(f"[INFO] {len(np.unique(ids))} faces trained. Exiting Program")
 
     def recognize(self):
-        self.face_recognizer.read("trainer/trainer.yml")
+        print(f"[INFO] Starting face recognition.")
+        self.face_recognizer.read(f"{Config.TRAINER_YAML}")
         names = dict()
         with open("face_map.json", "r") as f:
             names = json.load(f)
         with VideoCaptureManager(camera_index=self.camera_index) as vcm:
             min_w = 0.1 * vcm.camera.get(3)
             min_h = 0.1 * vcm.camera.get(4)
+            detected_faces = set()
             while True:
-                ret, img = vcm.camera.read()
-                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                _, image = vcm.camera.read()
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 faces = self.face_detector.detectMultiScale(
                     gray,
                     scaleFactor=1.2,
@@ -220,23 +239,31 @@ class Recognizer:
                 )
 
                 for (x, y, w, h) in faces:
-                    cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
                     _id, confidence = self.face_recognizer.predict(
                         gray[y : y + h, x : x + w]
                     )
 
-                    if confidence < 100:
-                        _id = names["faces"].get(str(_id), "Unknown")
-                        confidence = "  {0}%".format(round(100 - confidence))
+                    if confidence > Config.CONFIDENCE:
+                        _id = names["faces"].get(str(_id), Config.UNKNOWN_FACE_NAME)
+                        confidence = f"{round(100 - confidence)}%"
                     else:
-                        _id = "unknown"
-                        confidence = "  {0}%".format(round(100 - confidence))
-
+                        _id = Config.UNKNOWN_FACE_NAME
+                        confidence = f"{round(100 - confidence)}%"
+                    if _id not in detected_faces:
+                        detected_faces.add(_id)
+                        print(f"Detected: {_id}")
                     cv2.putText(
-                        img, str(_id), (x + 5, y - 5), self.font, 1, (255, 255, 255), 2
+                        image,
+                        str(_id),
+                        (x + 5, y - 5),
+                        self.font,
+                        1,
+                        (255, 255, 255),
+                        2,
                     )
                     cv2.putText(
-                        img,
+                        image,
                         str(confidence),
                         (x + 5, y + h - 5),
                         self.font,
@@ -245,7 +272,7 @@ class Recognizer:
                         1,
                     )
 
-                cv2.imshow("camera", img)
+                cv2.imshow(Config.RECOGNIZER_FRAME_NAME, image)
                 k = cv2.waitKey(10) & 0xFF
                 if k == 27:
                     break
