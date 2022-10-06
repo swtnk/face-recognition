@@ -17,7 +17,11 @@ FACE_MAP_JSON = Config.FACE_MAP_JSON
 
 
 def install_package(package_name: str) -> bool:
-    pip.main(["install", package_name])
+    try:
+        pip.main(["install", package_name])
+    except Exception:
+        return False
+    return True
 
 
 if platform.system().lower() == "windows":
@@ -28,12 +32,12 @@ if platform.system().lower() == "windows":
         import winsdk.windows.devices.enumeration as windows_devices
 
 
-def setup_project():
+def setup_project() -> None:
     for directory in DIRECTORIES:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
 
-def clean_project():
+def clean_project() -> None:
     for directory in DIRECTORIES:
         shutil.rmtree(directory, ignore_errors=True)
     Path(FACE_MAP_JSON).unlink(missing_ok=True)
@@ -95,7 +99,7 @@ class Camera:
         return self.cameras
 
     @classmethod
-    def test_camera(cls, camera_index: int = 0):
+    def test_camera(cls, camera_index: int = 0) -> None:
         with VideoCaptureManager(camera_index=camera_index) as vcm:
             while True:
                 _, frame = vcm.camera.read()
@@ -128,7 +132,7 @@ class VideoCaptureManager:
         self.camera.set(*self.height)
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.camera.release()
         cv2.destroyAllWindows()
 
