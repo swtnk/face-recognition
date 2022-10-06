@@ -1,4 +1,3 @@
-from tkinter import CASCADE
 import typing
 import platform
 import asyncio
