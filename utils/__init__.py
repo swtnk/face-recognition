@@ -212,11 +212,11 @@ class Recognizer:
         return face_samples, ids
 
     def train(self):
-        print("Training started...")
+        print("Memorizing faces...")
         faces, ids = self.__get_images_and_labels()
         self.face_recognizer.train(faces, np.array(ids))
         self.face_recognizer.write(f"{Config.TRAINER_YAML}")
-        print(f"[INFO] {len(np.unique(ids))} faces trained. Exiting Program")
+        print(f"{len(np.unique(ids))} faces memorized.")
 
     def recognize(self):
         print(f"[INFO] Starting face recognition.")
